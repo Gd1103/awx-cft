@@ -1,7 +1,7 @@
 version: '2'
 services:
   sidecar:
-    image: sidecar:16.0.0
+    image: devopsjuly22017/sidecar:16.0.0
     tty: true
   web:
     image: ansible/awx:16.0.0
