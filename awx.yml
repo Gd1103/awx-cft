@@ -1,0 +1,1008 @@
+AWSTemplateFormatVersion: 2010-09-09
+Resources:
+  CloudMap:
+    Properties:
+      Description: Service Map for Docker Compose project awxcompose
+      Name: awxcompose.local
+      Vpc: vpc-d202e3b9
+    Type: AWS::ServiceDiscovery::PrivateDnsNamespace
+  Cluster:
+    Properties:
+      ClusterName: awxcompose
+      Tags:
+      - Key: com.docker.compose.project
+        Value: awxcompose
+    Type: AWS::ECS::Cluster
+  Default8052Ingress:
+    Properties:
+      CidrIp: 0.0.0.0/0
+      Description: web:8052/tcp on default network
+      FromPort: 8052
+      GroupId:
+        Ref: DefaultNetwork
+      IpProtocol: TCP
+      ToPort: 8052
+    Type: AWS::EC2::SecurityGroupIngress
+  DefaultNetwork:
+    Properties:
+      GroupDescription: awxcompose Security Group for default network
+      Tags:
+      - Key: com.docker.compose.project
+        Value: awxcompose
+      - Key: com.docker.compose.network
+        Value: default
+      VpcId: vpc-d202e3b9
+    Type: AWS::EC2::SecurityGroup
+  DefaultNetworkIngress:
+    Properties:
+      Description: Allow communication within network default
+      GroupId:
+        Ref: DefaultNetwork
+      IpProtocol: "-1"
+      SourceSecurityGroupId:
+        Ref: DefaultNetwork
+    Type: AWS::EC2::SecurityGroupIngress
+  LoadBalancer:
+    Properties:
+      LoadBalancerAttributes:
+      - Key: load_balancing.cross_zone.enabled
+        Value: "true"
+      Scheme: internet-facing
+      Subnets:
+      - subnet-049e976c
+      - subnet-80be10cc
+      - subnet-4e0c4a34
+      Tags:
+      - Key: com.docker.compose.project
+        Value: awxcompose
+      Type: network
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+  LogGroup:
+    Properties:
+      LogGroupName: /docker-compose/awxcompose
+    Type: AWS::Logs::LogGroup
+  PostgresService:
+    DependsOn:
+    - PostgresdataNFSMountTargetOnSubnet049e976c
+    - PostgresdataNFSMountTargetOnSubnet80be10cc
+    - PostgresdataNFSMountTargetOnSubnet4e0c4a34
+    Properties:
+      Cluster:
+        Fn::GetAtt:
+        - Cluster
+        - Arn
+      DeploymentConfiguration:
+        MaximumPercent: 200
+        MinimumHealthyPercent: 100
+      DeploymentController:
+        Type: ECS
+      DesiredCount: 1
+      LaunchType: FARGATE
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED
+          SecurityGroups:
+          - Ref: DefaultNetwork
+          Subnets:
+          - subnet-049e976c
+          - subnet-80be10cc
+          - subnet-4e0c4a34
+      PlatformVersion: 1.4.0
+      PropagateTags: SERVICE
+      SchedulingStrategy: REPLICA
+      ServiceRegistries:
+      - RegistryArn:
+          Fn::GetAtt:
+          - PostgresServiceDiscoveryEntry
+          - Arn
+      Tags:
+      - Key: com.docker.compose.project
+        Value: awxcompose
+      - Key: com.docker.compose.service
+        Value: postgres
+      TaskDefinition:
+        Ref: PostgresTaskDefinition
+    Type: AWS::ECS::Service
+  PostgresServiceDiscoveryEntry:
+    Properties:
+      Description: '"postgres" service discovery entry in Cloud Map'
+      DnsConfig:
+        DnsRecords:
+        - TTL: 60
+          Type: A
+        RoutingPolicy: MULTIVALUE
+      HealthCheckCustomConfig:
+        FailureThreshold: 1
+      Name: postgres
+      NamespaceId:
+        Ref: CloudMap
+    Type: AWS::ServiceDiscovery::Service
+  PostgresTaskDefinition:
+    Properties:
+      ContainerDefinitions:
+      - Command:
+        - us-east-2.compute.internal
+        - awxcompose.local
+        Essential: false
+        Image: docker/ecs-searchdomain-sidecar:1.0
+        LogConfiguration:
+          LogDriver: awslogs
+          Options:
+            awslogs-group:
+              Ref: LogGroup
+            awslogs-region:
+              Ref: AWS::Region
+            awslogs-stream-prefix: awxcompose
+        Name: Postgres_ResolvConf_InitContainer
+      - DependsOn:
+        - Condition: SUCCESS
+          ContainerName: Postgres_ResolvConf_InitContainer
+        Environment:
+        - Name: POSTGRES_DB
+          Value: awx
+        - Name: POSTGRES_PASSWORD
+          Value: awxpass
+        - Name: POSTGRES_USER
+          Value: awx
+        - Name: http_proxy
+        - Name: https_proxy
+        - Name: no_proxy
+        Essential: true
+        Image: postgres:10
+        LinuxParameters: {}
+        LogConfiguration:
+          LogDriver: awslogs
+          Options:
+            awslogs-group:
+              Ref: LogGroup
+            awslogs-region:
+              Ref: AWS::Region
+            awslogs-stream-prefix: awxcompose
+        MountPoints:
+        - ContainerPath: /var/lib/postgresql/data/
+          SourceVolume: postgres_data
+        Name: postgres
+      Cpu: "256"
+      ExecutionRoleArn:
+        Ref: PostgresTaskExecutionRole
+      Family: awxcompose-postgres
+      Memory: "512"
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+      - FARGATE
+      TaskRoleArn:
+        Ref: PostgresTaskRole
+      Volumes:
+      - EFSVolumeConfiguration:
+          AuthorizationConfig:
+            AccessPointId:
+              Ref: PostgresdataAccessPoint
+            IAM: ENABLED
+          FilesystemId:
+            Ref: PostgresdataFilesystem
+          TransitEncryption: ENABLED
+        Name: postgres_data
+    Type: AWS::ECS::TaskDefinition
+  PostgresTaskExecutionRole:
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+        - Action:
+          - sts:AssumeRole
+          Condition: {}
+          Effect: Allow
+          Principal:
+            Service: ecs-tasks.amazonaws.com
+        Version: 2012-10-17
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+      - arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly
+      Tags:
+      - Key: com.docker.compose.project
+        Value: awxcompose
+      - Key: com.docker.compose.service
+        Value: postgres
+    Type: AWS::IAM::Role
+  PostgresTaskRole:
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+        - Action:
+          - sts:AssumeRole
+          Condition: {}
+          Effect: Allow
+          Principal:
+            Service: ecs-tasks.amazonaws.com
+        Version: 2012-10-17
+      Policies:
+      - PolicyDocument:
+          Statement:
+          - Action:
+            - elasticfilesystem:ClientMount
+            - elasticfilesystem:ClientWrite
+            - elasticfilesystem:ClientRootAccess
+            Condition:
+              StringEquals:
+                elasticfilesystem:AccessPointArn:
+                  Ref: PostgresdataAccessPoint
+            Effect: Allow
+            Principal: {}
+            Resource:
+            - Fn::GetAtt:
+              - PostgresdataFilesystem
+              - Arn
+          Version: 2012-10-17
+        PolicyName: PostgresPostgresdataVolumeMountPolicy
+      Tags:
+      - Key: com.docker.compose.project
+        Value: awxcompose
+      - Key: com.docker.compose.service
+        Value: postgres
+    Type: AWS::IAM::Role
+  PostgresdataAccessPoint:
+    Properties:
+      AccessPointTags:
+      - Key: com.docker.compose.project
+        Value: awxcompose
+      - Key: com.docker.compose.volume
+        Value: postgres_data
+      - Key: Name
+        Value: awxcompose_postgres_data
+      FileSystemId:
+        Ref: PostgresdataFilesystem
+    Type: AWS::EFS::AccessPoint
+  PostgresdataFilesystem:
+    DeletionPolicy: Retain
+    Properties:
+      Encrypted: true
+      FileSystemTags:
+      - Key: com.docker.compose.project
+        Value: awxcompose
+      - Key: com.docker.compose.volume
+        Value: postgres_data
+      - Key: Name
+        Value: awxcompose_postgres_data
+    Type: AWS::EFS::FileSystem
+  PostgresdataNFSMountTargetOnSubnet4e0c4a34:
+    Properties:
+      FileSystemId:
+        Ref: PostgresdataFilesystem
+      SecurityGroups:
+      - Ref: DefaultNetwork
+      SubnetId: subnet-4e0c4a34
+    Type: AWS::EFS::MountTarget
+  PostgresdataNFSMountTargetOnSubnet049e976c:
+    Properties:
+      FileSystemId:
+        Ref: PostgresdataFilesystem
+      SecurityGroups:
+      - Ref: DefaultNetwork
+      SubnetId: subnet-049e976c
+    Type: AWS::EFS::MountTarget
+  PostgresdataNFSMountTargetOnSubnet80be10cc:
+    Properties:
+      FileSystemId:
+        Ref: PostgresdataFilesystem
+      SecurityGroups:
+      - Ref: DefaultNetwork
+      SubnetId: subnet-80be10cc
+    Type: AWS::EFS::MountTarget
+  RedisService:
+    DependsOn:
+    - RedissocketNFSMountTargetOnSubnet049e976c
+    - RedissocketNFSMountTargetOnSubnet80be10cc
+    - RedissocketNFSMountTargetOnSubnet4e0c4a34
+    Properties:
+      Cluster:
+        Fn::GetAtt:
+        - Cluster
+        - Arn
+      DeploymentConfiguration:
+        MaximumPercent: 200
+        MinimumHealthyPercent: 100
+      DeploymentController:
+        Type: ECS
+      DesiredCount: 1
+      LaunchType: FARGATE
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED
+          SecurityGroups:
+          - Ref: DefaultNetwork
+          Subnets:
+          - subnet-049e976c
+          - subnet-80be10cc
+          - subnet-4e0c4a34
+      PlatformVersion: 1.4.0
+      PropagateTags: SERVICE
+      SchedulingStrategy: REPLICA
+      ServiceRegistries:
+      - RegistryArn:
+          Fn::GetAtt:
+          - RedisServiceDiscoveryEntry
+          - Arn
+      Tags:
+      - Key: com.docker.compose.project
+        Value: awxcompose
+      - Key: com.docker.compose.service
+        Value: redis
+      TaskDefinition:
+        Ref: RedisTaskDefinition
+    Type: AWS::ECS::Service
+  RedisServiceDiscoveryEntry:
+    Properties:
+      Description: '"redis" service discovery entry in Cloud Map'
+      DnsConfig:
+        DnsRecords:
+        - TTL: 60
+          Type: A
+        RoutingPolicy: MULTIVALUE
+      HealthCheckCustomConfig:
+        FailureThreshold: 1
+      Name: redis
+      NamespaceId:
+        Ref: CloudMap
+    Type: AWS::ServiceDiscovery::Service
+  RedisTaskDefinition:
+    Properties:
+      ContainerDefinitions:
+      - Command:
+        - us-east-2.compute.internal
+        - awxcompose.local
+        Essential: false
+        Image: docker/ecs-searchdomain-sidecar:1.0
+        LogConfiguration:
+          LogDriver: awslogs
+          Options:
+            awslogs-group:
+              Ref: LogGroup
+            awslogs-region:
+              Ref: AWS::Region
+            awslogs-stream-prefix: awxcompose
+        Name: Redis_ResolvConf_InitContainer
+      - Command:
+        - /usr/local/etc/redis/redis.conf
+        DependsOn:
+        - Condition: SUCCESS
+          ContainerName: Redis_ResolvConf_InitContainer
+        Environment:
+        - Name: http_proxy
+        - Name: https_proxy
+        - Name: no_proxy
+        Essential: true
+        Image: redis
+        LinuxParameters: {}
+        LogConfiguration:
+          LogDriver: awslogs
+          Options:
+            awslogs-group:
+              Ref: LogGroup
+            awslogs-region:
+              Ref: AWS::Region
+            awslogs-stream-prefix: awxcompose
+        MountPoints:
+        - ContainerPath: /var/run/redis/
+          SourceVolume: redis_socket
+        Name: redis
+      Cpu: "256"
+      ExecutionRoleArn:
+        Ref: RedisTaskExecutionRole
+      Family: awxcompose-redis
+      Memory: "512"
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+      - FARGATE
+      TaskRoleArn:
+        Ref: RedisTaskRole
+      Volumes:
+      - EFSVolumeConfiguration:
+          AuthorizationConfig:
+            AccessPointId:
+              Ref: RedissocketAccessPoint
+            IAM: ENABLED
+          FilesystemId:
+            Ref: RedissocketFilesystem
+          TransitEncryption: ENABLED
+        Name: redis_socket
+    Type: AWS::ECS::TaskDefinition
+  RedisTaskExecutionRole:
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+        - Action:
+          - sts:AssumeRole
+          Condition: {}
+          Effect: Allow
+          Principal:
+            Service: ecs-tasks.amazonaws.com
+        Version: 2012-10-17
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+      - arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly
+      Tags:
+      - Key: com.docker.compose.project
+        Value: awxcompose
+      - Key: com.docker.compose.service
+        Value: redis
+    Type: AWS::IAM::Role
+  RedisTaskRole:
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+        - Action:
+          - sts:AssumeRole
+          Condition: {}
+          Effect: Allow
+          Principal:
+            Service: ecs-tasks.amazonaws.com
+        Version: 2012-10-17
+      Policies:
+      - PolicyDocument:
+          Statement:
+          - Action:
+            - elasticfilesystem:ClientMount
+            - elasticfilesystem:ClientWrite
+            - elasticfilesystem:ClientRootAccess
+            Condition:
+              StringEquals:
+                elasticfilesystem:AccessPointArn:
+                  Ref: RedissocketAccessPoint
+            Effect: Allow
+            Principal: {}
+            Resource:
+            - Fn::GetAtt:
+              - RedissocketFilesystem
+              - Arn
+          Version: 2012-10-17
+        PolicyName: RedisRedissocketVolumeMountPolicy
+      Tags:
+      - Key: com.docker.compose.project
+        Value: awxcompose
+      - Key: com.docker.compose.service
+        Value: redis
+    Type: AWS::IAM::Role
+  RedissocketAccessPoint:
+    Properties:
+      AccessPointTags:
+      - Key: com.docker.compose.project
+        Value: awxcompose
+      - Key: com.docker.compose.volume
+        Value: redis_socket
+      - Key: Name
+        Value: awxcompose_redis_socket
+      FileSystemId:
+        Ref: RedissocketFilesystem
+    Type: AWS::EFS::AccessPoint
+  RedissocketFilesystem:
+    DeletionPolicy: Retain
+    Properties:
+      Encrypted: true
+      FileSystemTags:
+      - Key: com.docker.compose.project
+        Value: awxcompose
+      - Key: com.docker.compose.volume
+        Value: redis_socket
+      - Key: Name
+        Value: awxcompose_redis_socket
+    Type: AWS::EFS::FileSystem
+  RedissocketNFSMountTargetOnSubnet4e0c4a34:
+    Properties:
+      FileSystemId:
+        Ref: RedissocketFilesystem
+      SecurityGroups:
+      - Ref: DefaultNetwork
+      SubnetId: subnet-4e0c4a34
+    Type: AWS::EFS::MountTarget
+  RedissocketNFSMountTargetOnSubnet049e976c:
+    Properties:
+      FileSystemId:
+        Ref: RedissocketFilesystem
+      SecurityGroups:
+      - Ref: DefaultNetwork
+      SubnetId: subnet-049e976c
+    Type: AWS::EFS::MountTarget
+  RedissocketNFSMountTargetOnSubnet80be10cc:
+    Properties:
+      FileSystemId:
+        Ref: RedissocketFilesystem
+      SecurityGroups:
+      - Ref: DefaultNetwork
+      SubnetId: subnet-80be10cc
+    Type: AWS::EFS::MountTarget
+  SidecarService:
+    Properties:
+      Cluster:
+        Fn::GetAtt:
+        - Cluster
+        - Arn
+      DeploymentConfiguration:
+        MaximumPercent: 200
+        MinimumHealthyPercent: 100
+      DeploymentController:
+        Type: ECS
+      DesiredCount: 1
+      LaunchType: FARGATE
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED
+          SecurityGroups:
+          - Ref: DefaultNetwork
+          Subnets:
+          - subnet-049e976c
+          - subnet-80be10cc
+          - subnet-4e0c4a34
+      PlatformVersion: 1.4.0
+      PropagateTags: SERVICE
+      SchedulingStrategy: REPLICA
+      ServiceRegistries:
+      - RegistryArn:
+          Fn::GetAtt:
+          - SidecarServiceDiscoveryEntry
+          - Arn
+      Tags:
+      - Key: com.docker.compose.project
+        Value: awxcompose
+      - Key: com.docker.compose.service
+        Value: sidecar
+      TaskDefinition:
+        Ref: SidecarTaskDefinition
+    Type: AWS::ECS::Service
+  SidecarServiceDiscoveryEntry:
+    Properties:
+      Description: '"sidecar" service discovery entry in Cloud Map'
+      DnsConfig:
+        DnsRecords:
+        - TTL: 60
+          Type: A
+        RoutingPolicy: MULTIVALUE
+      HealthCheckCustomConfig:
+        FailureThreshold: 1
+      Name: sidecar
+      NamespaceId:
+        Ref: CloudMap
+    Type: AWS::ServiceDiscovery::Service
+  SidecarTaskDefinition:
+    Properties:
+      ContainerDefinitions:
+      - Command:
+        - us-east-2.compute.internal
+        - awxcompose.local
+        Essential: false
+        Image: docker/ecs-searchdomain-sidecar:1.0
+        LogConfiguration:
+          LogDriver: awslogs
+          Options:
+            awslogs-group:
+              Ref: LogGroup
+            awslogs-region:
+              Ref: AWS::Region
+            awslogs-stream-prefix: awxcompose
+        Name: Sidecar_ResolvConf_InitContainer
+      - DependsOn:
+        - Condition: SUCCESS
+          ContainerName: Sidecar_ResolvConf_InitContainer
+        Essential: true
+        Image: devopsjuly22017/sidecar:16.0.0
+        LinuxParameters: {}
+        LogConfiguration:
+          LogDriver: awslogs
+          Options:
+            awslogs-group:
+              Ref: LogGroup
+            awslogs-region:
+              Ref: AWS::Region
+            awslogs-stream-prefix: awxcompose
+        Name: sidecar
+      Cpu: "256"
+      ExecutionRoleArn:
+        Ref: SidecarTaskExecutionRole
+      Family: awxcompose-sidecar
+      Memory: "512"
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+      - FARGATE
+    Type: AWS::ECS::TaskDefinition
+  SidecarTaskExecutionRole:
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+        - Action:
+          - sts:AssumeRole
+          Condition: {}
+          Effect: Allow
+          Principal:
+            Service: ecs-tasks.amazonaws.com
+        Version: 2012-10-17
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+      - arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly
+      Tags:
+      - Key: com.docker.compose.project
+        Value: awxcompose
+      - Key: com.docker.compose.service
+        Value: sidecar
+    Type: AWS::IAM::Role
+  TaskService:
+    DependsOn:
+    - RedissocketNFSMountTargetOnSubnet049e976c
+    - RedissocketNFSMountTargetOnSubnet80be10cc
+    - RedissocketNFSMountTargetOnSubnet4e0c4a34
+    Properties:
+      Cluster:
+        Fn::GetAtt:
+        - Cluster
+        - Arn
+      DeploymentConfiguration:
+        MaximumPercent: 200
+        MinimumHealthyPercent: 100
+      DeploymentController:
+        Type: ECS
+      DesiredCount: 1
+      LaunchType: FARGATE
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED
+          SecurityGroups:
+          - Ref: DefaultNetwork
+          Subnets:
+          - subnet-049e976c
+          - subnet-80be10cc
+          - subnet-4e0c4a34
+      PlatformVersion: 1.4.0
+      PropagateTags: SERVICE
+      SchedulingStrategy: REPLICA
+      ServiceRegistries:
+      - RegistryArn:
+          Fn::GetAtt:
+          - TaskServiceDiscoveryEntry
+          - Arn
+      Tags:
+      - Key: com.docker.compose.project
+        Value: awxcompose
+      - Key: com.docker.compose.service
+        Value: task
+      TaskDefinition:
+        Ref: TaskTaskDefinition
+    Type: AWS::ECS::Service
+  TaskServiceDiscoveryEntry:
+    Properties:
+      Description: '"task" service discovery entry in Cloud Map'
+      DnsConfig:
+        DnsRecords:
+        - TTL: 60
+          Type: A
+        RoutingPolicy: MULTIVALUE
+      HealthCheckCustomConfig:
+        FailureThreshold: 1
+      Name: task
+      NamespaceId:
+        Ref: CloudMap
+    Type: AWS::ServiceDiscovery::Service
+  TaskTaskDefinition:
+    Properties:
+      ContainerDefinitions:
+      - Command:
+        - us-east-2.compute.internal
+        - awxcompose.local
+        Essential: false
+        Image: docker/ecs-searchdomain-sidecar:1.0
+        LogConfiguration:
+          LogDriver: awslogs
+          Options:
+            awslogs-group:
+              Ref: LogGroup
+            awslogs-region:
+              Ref: AWS::Region
+            awslogs-stream-prefix: awxcompose
+        Name: Task_ResolvConf_InitContainer
+      - Command:
+        - /usr/bin/launch_awx_task.sh
+        DependsOn:
+        - Condition: SUCCESS
+          ContainerName: Task_ResolvConf_InitContainer
+        Environment:
+        - Name: SUPERVISOR_WEB_CONFIG_PATH
+          Value: /etc/supervisord.conf
+        - Name: http_proxy
+        - Name: https_proxy
+        - Name: no_proxy
+        Essential: true
+        Image: ansible/awx:16.0.0
+        LinuxParameters: {}
+        LogConfiguration:
+          LogDriver: awslogs
+          Options:
+            awslogs-group:
+              Ref: LogGroup
+            awslogs-region:
+              Ref: AWS::Region
+            awslogs-stream-prefix: awxcompose
+        MountPoints:
+        - ContainerPath: /var/run/redis/
+          SourceVolume: redis_socket
+        Name: task
+        User: root
+      Cpu: "256"
+      ExecutionRoleArn:
+        Ref: TaskTaskExecutionRole
+      Family: awxcompose-task
+      Memory: "512"
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+      - FARGATE
+      TaskRoleArn:
+        Ref: TaskTaskRole
+      Volumes:
+      - EFSVolumeConfiguration:
+          AuthorizationConfig:
+            AccessPointId:
+              Ref: RedissocketAccessPoint
+            IAM: ENABLED
+          FilesystemId:
+            Ref: RedissocketFilesystem
+          TransitEncryption: ENABLED
+        Name: redis_socket
+    Type: AWS::ECS::TaskDefinition
+  TaskTaskExecutionRole:
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+        - Action:
+          - sts:AssumeRole
+          Condition: {}
+          Effect: Allow
+          Principal:
+            Service: ecs-tasks.amazonaws.com
+        Version: 2012-10-17
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+      - arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly
+      Tags:
+      - Key: com.docker.compose.project
+        Value: awxcompose
+      - Key: com.docker.compose.service
+        Value: task
+    Type: AWS::IAM::Role
+  TaskTaskRole:
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+        - Action:
+          - sts:AssumeRole
+          Condition: {}
+          Effect: Allow
+          Principal:
+            Service: ecs-tasks.amazonaws.com
+        Version: 2012-10-17
+      Policies:
+      - PolicyDocument:
+          Statement:
+          - Action:
+            - elasticfilesystem:ClientMount
+            - elasticfilesystem:ClientWrite
+            - elasticfilesystem:ClientRootAccess
+            Condition:
+              StringEquals:
+                elasticfilesystem:AccessPointArn:
+                  Ref: RedissocketAccessPoint
+            Effect: Allow
+            Principal: {}
+            Resource:
+            - Fn::GetAtt:
+              - RedissocketFilesystem
+              - Arn
+          Version: 2012-10-17
+        PolicyName: TaskRedissocketVolumeMountPolicy
+      Tags:
+      - Key: com.docker.compose.project
+        Value: awxcompose
+      - Key: com.docker.compose.service
+        Value: task
+    Type: AWS::IAM::Role
+  WebService:
+    DependsOn:
+    - WebTCP8052Listener
+    - RedissocketNFSMountTargetOnSubnet049e976c
+    - RedissocketNFSMountTargetOnSubnet80be10cc
+    - RedissocketNFSMountTargetOnSubnet4e0c4a34
+    Properties:
+      Cluster:
+        Fn::GetAtt:
+        - Cluster
+        - Arn
+      DeploymentConfiguration:
+        MaximumPercent: 200
+        MinimumHealthyPercent: 100
+      DeploymentController:
+        Type: ECS
+      DesiredCount: 1
+      LaunchType: FARGATE
+      LoadBalancers:
+      - ContainerName: web
+        ContainerPort: 8052
+        TargetGroupArn:
+          Ref: WebTCP8052TargetGroup
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED
+          SecurityGroups:
+          - Ref: DefaultNetwork
+          Subnets:
+          - subnet-049e976c
+          - subnet-80be10cc
+          - subnet-4e0c4a34
+      PlatformVersion: 1.4.0
+      PropagateTags: SERVICE
+      SchedulingStrategy: REPLICA
+      ServiceRegistries:
+      - RegistryArn:
+          Fn::GetAtt:
+          - WebServiceDiscoveryEntry
+          - Arn
+      Tags:
+      - Key: com.docker.compose.project
+        Value: awxcompose
+      - Key: com.docker.compose.service
+        Value: web
+      TaskDefinition:
+        Ref: WebTaskDefinition
+    Type: AWS::ECS::Service
+  WebServiceDiscoveryEntry:
+    Properties:
+      Description: '"web" service discovery entry in Cloud Map'
+      DnsConfig:
+        DnsRecords:
+        - TTL: 60
+          Type: A
+        RoutingPolicy: MULTIVALUE
+      HealthCheckCustomConfig:
+        FailureThreshold: 1
+      Name: web
+      NamespaceId:
+        Ref: CloudMap
+    Type: AWS::ServiceDiscovery::Service
+  WebTCP8052Listener:
+    Properties:
+      DefaultActions:
+      - ForwardConfig:
+          TargetGroups:
+          - TargetGroupArn:
+              Ref: WebTCP8052TargetGroup
+        Type: forward
+      LoadBalancerArn:
+        Ref: LoadBalancer
+      Port: 8052
+      Protocol: TCP
+    Type: AWS::ElasticLoadBalancingV2::Listener
+  WebTCP8052TargetGroup:
+    Properties:
+      Port: 8052
+      Protocol: TCP
+      Tags:
+      - Key: com.docker.compose.project
+        Value: awxcompose
+      TargetType: ip
+      VpcId: vpc-d202e3b9
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+  WebTaskDefinition:
+    Properties:
+      ContainerDefinitions:
+      - Command:
+        - us-east-2.compute.internal
+        - awxcompose.local
+        Essential: false
+        Image: docker/ecs-searchdomain-sidecar:1.0
+        LogConfiguration:
+          LogDriver: awslogs
+          Options:
+            awslogs-group:
+              Ref: LogGroup
+            awslogs-region:
+              Ref: AWS::Region
+            awslogs-stream-prefix: awxcompose
+        Name: Web_ResolvConf_InitContainer
+      - DependsOn:
+        - Condition: SUCCESS
+          ContainerName: Web_ResolvConf_InitContainer
+        Environment:
+        - Name: http_proxy
+        - Name: https_proxy
+        - Name: no_proxy
+        Essential: true
+        Image: ansible/awx:16.0.0
+        LinuxParameters: {}
+        LogConfiguration:
+          LogDriver: awslogs
+          Options:
+            awslogs-group:
+              Ref: LogGroup
+            awslogs-region:
+              Ref: AWS::Region
+            awslogs-stream-prefix: awxcompose
+        MountPoints:
+        - ContainerPath: /var/run/redis/
+          SourceVolume: redis_socket
+        Name: web
+        PortMappings:
+        - ContainerPort: 8052
+          HostPort: 8052
+          Protocol: tcp
+        User: root
+      Cpu: "256"
+      ExecutionRoleArn:
+        Ref: WebTaskExecutionRole
+      Family: awxcompose-web
+      Memory: "512"
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+      - FARGATE
+      TaskRoleArn:
+        Ref: WebTaskRole
+      Volumes:
+      - EFSVolumeConfiguration:
+          AuthorizationConfig:
+            AccessPointId:
+              Ref: RedissocketAccessPoint
+            IAM: ENABLED
+          FilesystemId:
+            Ref: RedissocketFilesystem
+          TransitEncryption: ENABLED
+        Name: redis_socket
+    Type: AWS::ECS::TaskDefinition
+  WebTaskExecutionRole:
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+        - Action:
+          - sts:AssumeRole
+          Condition: {}
+          Effect: Allow
+          Principal:
+            Service: ecs-tasks.amazonaws.com
+        Version: 2012-10-17
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+      - arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly
+      Tags:
+      - Key: com.docker.compose.project
+        Value: awxcompose
+      - Key: com.docker.compose.service
+        Value: web
+    Type: AWS::IAM::Role
+  WebTaskRole:
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+        - Action:
+          - sts:AssumeRole
+          Condition: {}
+          Effect: Allow
+          Principal:
+            Service: ecs-tasks.amazonaws.com
+        Version: 2012-10-17
+      Policies:
+      - PolicyDocument:
+          Statement:
+          - Action:
+            - elasticfilesystem:ClientMount
+            - elasticfilesystem:ClientWrite
+            - elasticfilesystem:ClientRootAccess
+            Condition:
+              StringEquals:
+                elasticfilesystem:AccessPointArn:
+                  Ref: RedissocketAccessPoint
+            Effect: Allow
+            Principal: {}
+            Resource:
+            - Fn::GetAtt:
+              - RedissocketFilesystem
+              - Arn
+          Version: 2012-10-17
+        PolicyName: WebRedissocketVolumeMountPolicy
+      Tags:
+      - Key: com.docker.compose.project
+        Value: awxcompose
+      - Key: com.docker.compose.service
+        Value: web
+    Type: AWS::IAM::Role
+
