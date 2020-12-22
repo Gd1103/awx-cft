@@ -1,0 +1,66 @@
+version: '2'
+services:
+  sidecar:
+    image: sidecar:16.0.0
+    tty: true
+  web:
+    image: ansible/awx:16.0.0
+    container_name: awx_web
+    ports:
+      - "80:8052"
+    hostname: awxweb
+    user: root
+    restart: unless-stopped
+    volumes:
+      - "~/.awx/awxcompose/redis_socket:/var/run/redis/:rw"
+    volumes_from:
+      - sidecar
+    environment:
+      http_proxy:
+      https_proxy:
+      no_proxy:
+
+  task:
+    image: ansible/awx:16.0.0
+    container_name: awx_task
+    command: /usr/bin/launch_awx_task.sh
+    hostname: awx
+    user: root
+    restart: unless-stopped
+    volumes:
+      - "~/.awx/awxcompose/redis_socket:/var/run/redis/:rw"
+    volumes_from:
+      - sidecar
+    environment:
+      http_proxy:
+      https_proxy:
+      no_proxy:
+      SUPERVISOR_WEB_CONFIG_PATH: '/etc/supervisord.conf'
+
+  redis:
+    image: redis
+    container_name: awx_redis
+    restart: unless-stopped
+    environment:
+      http_proxy:
+      https_proxy:
+      no_proxy:
+    command: ["/usr/local/etc/redis/redis.conf"]
+    volumes:
+      - "~/.awx/awxcompose/redis_socket:/var/run/redis/:rw"
+    volumes_from:
+      - sidecar
+
+  postgres:
+    image: postgres:10
+    container_name: awx_postgres
+    restart: unless-stopped
+    volumes:
+      - "~/.awx/pgdocker/10/data/:/var/lib/postgresql/data:Z"
+    environment:
+      POSTGRES_USER: awx
+      POSTGRES_PASSWORD: awxpass
+      POSTGRES_DB: awx
+      http_proxy:
+      https_proxy:
+      no_proxy:
