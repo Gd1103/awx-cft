@@ -178,8 +178,7 @@ Resources:
             AccessPointId:
               Ref: PostgresdataAccessPoint
             IAM: ENABLED
-          FilesystemId:
-            Ref: PostgresdataFilesystem
+          FilesystemId: fs-d8d5a5a0
           TransitEncryption: ENABLED
         Name: postgres_data
     Type: AWS::ECS::TaskDefinition
@@ -228,9 +227,7 @@ Resources:
             Effect: Allow
             Principal: {}
             Resource:
-            - Fn::GetAtt:
-              - PostgresdataFilesystem
-              - Arn
+            - arn:aws:elasticfilesystem:us-east-2:724034124035:file-system/fs-d8d5a5a0
           Version: 2012-10-17
         PolicyName: PostgresPostgresdataVolumeMountPolicy
       Tags:
@@ -248,41 +245,25 @@ Resources:
         Value: postgres_data
       - Key: Name
         Value: awxcompose_postgres_data
-      FileSystemId:
-        Ref: PostgresdataFilesystem
+      FileSystemId: fs-d8d5a5a0
     Type: AWS::EFS::AccessPoint
-  PostgresdataFilesystem:
-    DeletionPolicy: Retain
-    Properties:
-      Encrypted: true
-      FileSystemTags:
-      - Key: com.docker.compose.project
-        Value: awxcompose
-      - Key: com.docker.compose.volume
-        Value: postgres_data
-      - Key: Name
-        Value: awxcompose_postgres_data
-    Type: AWS::EFS::FileSystem
   PostgresdataNFSMountTargetOnSubnet4e0c4a34:
     Properties:
-      FileSystemId:
-        Ref: PostgresdataFilesystem
+      FileSystemId: fs-d8d5a5a0
       SecurityGroups:
       - Ref: DefaultNetwork
       SubnetId: subnet-4e0c4a34
     Type: AWS::EFS::MountTarget
   PostgresdataNFSMountTargetOnSubnet049e976c:
     Properties:
-      FileSystemId:
-        Ref: PostgresdataFilesystem
+      FileSystemId: fs-d8d5a5a0
       SecurityGroups:
       - Ref: DefaultNetwork
       SubnetId: subnet-049e976c
     Type: AWS::EFS::MountTarget
   PostgresdataNFSMountTargetOnSubnet80be10cc:
     Properties:
-      FileSystemId:
-        Ref: PostgresdataFilesystem
+      FileSystemId: fs-d8d5a5a0
       SecurityGroups:
       - Ref: DefaultNetwork
       SubnetId: subnet-80be10cc
@@ -370,7 +351,7 @@ Resources:
         - Name: https_proxy
         - Name: no_proxy
         Essential: true
-        Image: redis
+        Image: devopsjuly22017/redis:awx
         LinuxParameters: {}
         LogConfiguration:
           LogDriver: awslogs
@@ -400,8 +381,7 @@ Resources:
             AccessPointId:
               Ref: RedissocketAccessPoint
             IAM: ENABLED
-          FilesystemId:
-            Ref: RedissocketFilesystem
+          FilesystemId: fs-e4d5a59c
           TransitEncryption: ENABLED
         Name: redis_socket
     Type: AWS::ECS::TaskDefinition
@@ -450,9 +430,7 @@ Resources:
             Effect: Allow
             Principal: {}
             Resource:
-            - Fn::GetAtt:
-              - RedissocketFilesystem
-              - Arn
+            - arn:aws:elasticfilesystem:us-east-2:724034124035:file-system/fs-e4d5a59c
           Version: 2012-10-17
         PolicyName: RedisRedissocketVolumeMountPolicy
       Tags:
@@ -470,41 +448,25 @@ Resources:
         Value: redis_socket
       - Key: Name
         Value: awxcompose_redis_socket
-      FileSystemId:
-        Ref: RedissocketFilesystem
+      FileSystemId: fs-e4d5a59c
     Type: AWS::EFS::AccessPoint
-  RedissocketFilesystem:
-    DeletionPolicy: Retain
-    Properties:
-      Encrypted: true
-      FileSystemTags:
-      - Key: com.docker.compose.project
-        Value: awxcompose
-      - Key: com.docker.compose.volume
-        Value: redis_socket
-      - Key: Name
-        Value: awxcompose_redis_socket
-    Type: AWS::EFS::FileSystem
   RedissocketNFSMountTargetOnSubnet4e0c4a34:
     Properties:
-      FileSystemId:
-        Ref: RedissocketFilesystem
+      FileSystemId: fs-e4d5a59c
       SecurityGroups:
       - Ref: DefaultNetwork
       SubnetId: subnet-4e0c4a34
     Type: AWS::EFS::MountTarget
   RedissocketNFSMountTargetOnSubnet049e976c:
     Properties:
-      FileSystemId:
-        Ref: RedissocketFilesystem
+      FileSystemId: fs-e4d5a59c
       SecurityGroups:
       - Ref: DefaultNetwork
       SubnetId: subnet-049e976c
     Type: AWS::EFS::MountTarget
   RedissocketNFSMountTargetOnSubnet80be10cc:
     Properties:
-      FileSystemId:
-        Ref: RedissocketFilesystem
+      FileSystemId: fs-e4d5a59c
       SecurityGroups:
       - Ref: DefaultNetwork
       SubnetId: subnet-80be10cc
@@ -719,6 +681,7 @@ Resources:
             awslogs-stream-prefix: awxcompose
         MountPoints:
         - ContainerPath: /var/run/redis/
+          ReadOnly: true
           SourceVolume: redis_socket
         Name: task
         User: root
@@ -738,8 +701,7 @@ Resources:
             AccessPointId:
               Ref: RedissocketAccessPoint
             IAM: ENABLED
-          FilesystemId:
-            Ref: RedissocketFilesystem
+          FilesystemId: fs-e4d5a59c
           TransitEncryption: ENABLED
         Name: redis_socket
     Type: AWS::ECS::TaskDefinition
@@ -788,9 +750,7 @@ Resources:
             Effect: Allow
             Principal: {}
             Resource:
-            - Fn::GetAtt:
-              - RedissocketFilesystem
-              - Arn
+            - arn:aws:elasticfilesystem:us-east-2:724034124035:file-system/fs-e4d5a59c
           Version: 2012-10-17
         PolicyName: TaskRedissocketVolumeMountPolicy
       Tags:
@@ -921,6 +881,7 @@ Resources:
             awslogs-stream-prefix: awxcompose
         MountPoints:
         - ContainerPath: /var/run/redis/
+          ReadOnly: true
           SourceVolume: redis_socket
         Name: web
         PortMappings:
@@ -944,8 +905,7 @@ Resources:
             AccessPointId:
               Ref: RedissocketAccessPoint
             IAM: ENABLED
-          FilesystemId:
-            Ref: RedissocketFilesystem
+          FilesystemId: fs-e4d5a59c
           TransitEncryption: ENABLED
         Name: redis_socket
     Type: AWS::ECS::TaskDefinition
@@ -994,9 +954,7 @@ Resources:
             Effect: Allow
             Principal: {}
             Resource:
-            - Fn::GetAtt:
-              - RedissocketFilesystem
-              - Arn
+            - arn:aws:elasticfilesystem:us-east-2:724034124035:file-system/fs-e4d5a59c
           Version: 2012-10-17
         PolicyName: WebRedissocketVolumeMountPolicy
       Tags:
