@@ -11,3 +11,5 @@ echo "COPY --chown=1000 redis.conf /usr/local/etc/redis/redis.conf" >> Dockerfil
 echo 'CMD exec /bin/bash -c "trap : TERM INT; sleep infinity & wait"' >> Dockerfile
 docker rmi sidecar:16.0.0
 docker build -t sidecar:16.0.0 .
+docker tag sidecar:16.0.0 devopsjuly22017/sidecar:16.0.0
+docker push devopsjuly22017/sidecar:16.0.0

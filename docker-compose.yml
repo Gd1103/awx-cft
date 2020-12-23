@@ -40,6 +40,7 @@ services:
   redis:
     image: devopsjuly22017/redis:awx
     container_name: awx_redis
+    restart: unless-stopped
     environment:
       http_proxy:
       https_proxy:
