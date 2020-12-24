@@ -2,16 +2,16 @@ AWSTemplateFormatVersion: 2010-09-09
 Resources:
   CloudMap:
     Properties:
-      Description: Service Map for Docker Compose project awxcompose
-      Name: awxcompose.local
+      Description: Service Map for Docker Compose project awx-cft
+      Name: awx-cft.local
       Vpc: vpc-d202e3b9
     Type: AWS::ServiceDiscovery::PrivateDnsNamespace
   Cluster:
     Properties:
-      ClusterName: awxcompose
+      ClusterName: awx-cft
       Tags:
       - Key: com.docker.compose.project
-        Value: awxcompose
+        Value: awx-cft
     Type: AWS::ECS::Cluster
   Default8052Ingress:
     Properties:
@@ -25,10 +25,10 @@ Resources:
     Type: AWS::EC2::SecurityGroupIngress
   DefaultNetwork:
     Properties:
-      GroupDescription: awxcompose Security Group for default network
+      GroupDescription: awx-cft Security Group for default network
       Tags:
       - Key: com.docker.compose.project
-        Value: awxcompose
+        Value: awx-cft
       - Key: com.docker.compose.network
         Value: default
       VpcId: vpc-d202e3b9
@@ -54,12 +54,12 @@ Resources:
       - subnet-4e0c4a34
       Tags:
       - Key: com.docker.compose.project
-        Value: awxcompose
+        Value: awx-cft
       Type: network
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
   LogGroup:
     Properties:
-      LogGroupName: /docker-compose/awxcompose
+      LogGroupName: /docker-compose/awx-cft
     Type: AWS::Logs::LogGroup
   PostgresService:
     DependsOn:
@@ -97,7 +97,7 @@ Resources:
           - Arn
       Tags:
       - Key: com.docker.compose.project
-        Value: awxcompose
+        Value: awx-cft
       - Key: com.docker.compose.service
         Value: postgres
       TaskDefinition:
@@ -122,7 +122,7 @@ Resources:
       ContainerDefinitions:
       - Command:
         - us-east-2.compute.internal
-        - awxcompose.local
+        - awx-cft.local
         Essential: false
         Image: docker/ecs-searchdomain-sidecar:1.0
         LogConfiguration:
@@ -132,7 +132,7 @@ Resources:
               Ref: LogGroup
             awslogs-region:
               Ref: AWS::Region
-            awslogs-stream-prefix: awxcompose
+            awslogs-stream-prefix: awx-cft
         Name: Postgres_ResolvConf_InitContainer
       - DependsOn:
         - Condition: SUCCESS
@@ -157,7 +157,7 @@ Resources:
               Ref: LogGroup
             awslogs-region:
               Ref: AWS::Region
-            awslogs-stream-prefix: awxcompose
+            awslogs-stream-prefix: awx-cft
         MountPoints:
         - ContainerPath: /var/lib/postgresql/data/
           SourceVolume: postgres_data
@@ -165,7 +165,7 @@ Resources:
       Cpu: "256"
       ExecutionRoleArn:
         Ref: PostgresTaskExecutionRole
-      Family: awxcompose-postgres
+      Family: awx-cft-postgres
       Memory: "512"
       NetworkMode: awsvpc
       RequiresCompatibilities:
@@ -178,7 +178,8 @@ Resources:
             AccessPointId:
               Ref: PostgresdataAccessPoint
             IAM: ENABLED
-          FilesystemId: fs-d8d5a5a0
+          FilesystemId:
+            Ref: PostgresdataFilesystem
           TransitEncryption: ENABLED
         Name: postgres_data
     Type: AWS::ECS::TaskDefinition
@@ -198,7 +199,7 @@ Resources:
       - arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly
       Tags:
       - Key: com.docker.compose.project
-        Value: awxcompose
+        Value: awx-cft
       - Key: com.docker.compose.service
         Value: postgres
     Type: AWS::IAM::Role
@@ -227,12 +228,14 @@ Resources:
             Effect: Allow
             Principal: {}
             Resource:
-            - arn:aws:elasticfilesystem:us-east-2:724034124035:file-system/fs-d8d5a5a0
+            - Fn::GetAtt:
+              - PostgresdataFilesystem
+              - Arn
           Version: 2012-10-17
         PolicyName: PostgresPostgresdataVolumeMountPolicy
       Tags:
       - Key: com.docker.compose.project
-        Value: awxcompose
+        Value: awx-cft
       - Key: com.docker.compose.service
         Value: postgres
     Type: AWS::IAM::Role
@@ -240,30 +243,46 @@ Resources:
     Properties:
       AccessPointTags:
       - Key: com.docker.compose.project
-        Value: awxcompose
+        Value: awx-cft
       - Key: com.docker.compose.volume
         Value: postgres_data
       - Key: Name
-        Value: awxcompose_postgres_data
-      FileSystemId: fs-d8d5a5a0
+        Value: awx-cft_postgres_data
+      FileSystemId:
+        Ref: PostgresdataFilesystem
     Type: AWS::EFS::AccessPoint
+  PostgresdataFilesystem:
+    DeletionPolicy: Retain
+    Properties:
+      Encrypted: true
+      FileSystemTags:
+      - Key: com.docker.compose.project
+        Value: awx-cft
+      - Key: com.docker.compose.volume
+        Value: postgres_data
+      - Key: Name
+        Value: awx-cft_postgres_data
+    Type: AWS::EFS::FileSystem
   PostgresdataNFSMountTargetOnSubnet4e0c4a34:
     Properties:
-      FileSystemId: fs-d8d5a5a0
+      FileSystemId:
+        Ref: PostgresdataFilesystem
       SecurityGroups:
       - Ref: DefaultNetwork
       SubnetId: subnet-4e0c4a34
     Type: AWS::EFS::MountTarget
   PostgresdataNFSMountTargetOnSubnet049e976c:
     Properties:
-      FileSystemId: fs-d8d5a5a0
+      FileSystemId:
+        Ref: PostgresdataFilesystem
       SecurityGroups:
       - Ref: DefaultNetwork
       SubnetId: subnet-049e976c
     Type: AWS::EFS::MountTarget
   PostgresdataNFSMountTargetOnSubnet80be10cc:
     Properties:
-      FileSystemId: fs-d8d5a5a0
+      FileSystemId:
+        Ref: PostgresdataFilesystem
       SecurityGroups:
       - Ref: DefaultNetwork
       SubnetId: subnet-80be10cc
@@ -304,7 +323,7 @@ Resources:
           - Arn
       Tags:
       - Key: com.docker.compose.project
-        Value: awxcompose
+        Value: awx-cft
       - Key: com.docker.compose.service
         Value: redis
       TaskDefinition:
@@ -329,7 +348,7 @@ Resources:
       ContainerDefinitions:
       - Command:
         - us-east-2.compute.internal
-        - awxcompose.local
+        - awx-cft.local
         Essential: false
         Image: docker/ecs-searchdomain-sidecar:1.0
         LogConfiguration:
@@ -339,7 +358,7 @@ Resources:
               Ref: LogGroup
             awslogs-region:
               Ref: AWS::Region
-            awslogs-stream-prefix: awxcompose
+            awslogs-stream-prefix: awx-cft
         Name: Redis_ResolvConf_InitContainer
       - Command:
         - /usr/local/etc/redis/redis.conf
@@ -360,7 +379,7 @@ Resources:
               Ref: LogGroup
             awslogs-region:
               Ref: AWS::Region
-            awslogs-stream-prefix: awxcompose
+            awslogs-stream-prefix: awx-cft
         MountPoints:
         - ContainerPath: /var/run/redis/
           SourceVolume: redis_socket
@@ -368,7 +387,7 @@ Resources:
       Cpu: "256"
       ExecutionRoleArn:
         Ref: RedisTaskExecutionRole
-      Family: awxcompose-redis
+      Family: awx-cft-redis
       Memory: "512"
       NetworkMode: awsvpc
       RequiresCompatibilities:
@@ -381,7 +400,8 @@ Resources:
             AccessPointId:
               Ref: RedissocketAccessPoint
             IAM: ENABLED
-          FilesystemId: fs-e4d5a59c
+          FilesystemId:
+            Ref: RedissocketFilesystem
           TransitEncryption: ENABLED
         Name: redis_socket
     Type: AWS::ECS::TaskDefinition
@@ -401,7 +421,7 @@ Resources:
       - arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly
       Tags:
       - Key: com.docker.compose.project
-        Value: awxcompose
+        Value: awx-cft
       - Key: com.docker.compose.service
         Value: redis
     Type: AWS::IAM::Role
@@ -430,12 +450,14 @@ Resources:
             Effect: Allow
             Principal: {}
             Resource:
-            - arn:aws:elasticfilesystem:us-east-2:724034124035:file-system/fs-e4d5a59c
+            - Fn::GetAtt:
+              - RedissocketFilesystem
+              - Arn
           Version: 2012-10-17
         PolicyName: RedisRedissocketVolumeMountPolicy
       Tags:
       - Key: com.docker.compose.project
-        Value: awxcompose
+        Value: awx-cft
       - Key: com.docker.compose.service
         Value: redis
     Type: AWS::IAM::Role
@@ -443,30 +465,46 @@ Resources:
     Properties:
       AccessPointTags:
       - Key: com.docker.compose.project
-        Value: awxcompose
+        Value: awx-cft
       - Key: com.docker.compose.volume
         Value: redis_socket
       - Key: Name
-        Value: awxcompose_redis_socket
-      FileSystemId: fs-e4d5a59c
+        Value: awx-cft_redis_socket
+      FileSystemId:
+        Ref: RedissocketFilesystem
     Type: AWS::EFS::AccessPoint
+  RedissocketFilesystem:
+    DeletionPolicy: Retain
+    Properties:
+      Encrypted: true
+      FileSystemTags:
+      - Key: com.docker.compose.project
+        Value: awx-cft
+      - Key: com.docker.compose.volume
+        Value: redis_socket
+      - Key: Name
+        Value: awx-cft_redis_socket
+    Type: AWS::EFS::FileSystem
   RedissocketNFSMountTargetOnSubnet4e0c4a34:
     Properties:
-      FileSystemId: fs-e4d5a59c
+      FileSystemId:
+        Ref: RedissocketFilesystem
       SecurityGroups:
       - Ref: DefaultNetwork
       SubnetId: subnet-4e0c4a34
     Type: AWS::EFS::MountTarget
   RedissocketNFSMountTargetOnSubnet049e976c:
     Properties:
-      FileSystemId: fs-e4d5a59c
+      FileSystemId:
+        Ref: RedissocketFilesystem
       SecurityGroups:
       - Ref: DefaultNetwork
       SubnetId: subnet-049e976c
     Type: AWS::EFS::MountTarget
   RedissocketNFSMountTargetOnSubnet80be10cc:
     Properties:
-      FileSystemId: fs-e4d5a59c
+      FileSystemId:
+        Ref: RedissocketFilesystem
       SecurityGroups:
       - Ref: DefaultNetwork
       SubnetId: subnet-80be10cc
@@ -503,7 +541,7 @@ Resources:
           - Arn
       Tags:
       - Key: com.docker.compose.project
-        Value: awxcompose
+        Value: awx-cft
       - Key: com.docker.compose.service
         Value: sidecar
       TaskDefinition:
@@ -528,7 +566,7 @@ Resources:
       ContainerDefinitions:
       - Command:
         - us-east-2.compute.internal
-        - awxcompose.local
+        - awx-cft.local
         Essential: false
         Image: docker/ecs-searchdomain-sidecar:1.0
         LogConfiguration:
@@ -538,7 +576,7 @@ Resources:
               Ref: LogGroup
             awslogs-region:
               Ref: AWS::Region
-            awslogs-stream-prefix: awxcompose
+            awslogs-stream-prefix: awx-cft
         Name: Sidecar_ResolvConf_InitContainer
       - DependsOn:
         - Condition: SUCCESS
@@ -553,12 +591,12 @@ Resources:
               Ref: LogGroup
             awslogs-region:
               Ref: AWS::Region
-            awslogs-stream-prefix: awxcompose
+            awslogs-stream-prefix: awx-cft
         Name: sidecar
       Cpu: "256"
       ExecutionRoleArn:
         Ref: SidecarTaskExecutionRole
-      Family: awxcompose-sidecar
+      Family: awx-cft-sidecar
       Memory: "512"
       NetworkMode: awsvpc
       RequiresCompatibilities:
@@ -580,7 +618,7 @@ Resources:
       - arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly
       Tags:
       - Key: com.docker.compose.project
-        Value: awxcompose
+        Value: awx-cft
       - Key: com.docker.compose.service
         Value: sidecar
     Type: AWS::IAM::Role
@@ -620,7 +658,7 @@ Resources:
           - Arn
       Tags:
       - Key: com.docker.compose.project
-        Value: awxcompose
+        Value: awx-cft
       - Key: com.docker.compose.service
         Value: task
       TaskDefinition:
@@ -645,7 +683,7 @@ Resources:
       ContainerDefinitions:
       - Command:
         - us-east-2.compute.internal
-        - awxcompose.local
+        - awx-cft.local
         Essential: false
         Image: docker/ecs-searchdomain-sidecar:1.0
         LogConfiguration:
@@ -655,7 +693,7 @@ Resources:
               Ref: LogGroup
             awslogs-region:
               Ref: AWS::Region
-            awslogs-stream-prefix: awxcompose
+            awslogs-stream-prefix: awx-cft
         Name: Task_ResolvConf_InitContainer
       - Command:
         - /usr/bin/launch_awx_task.sh
@@ -669,7 +707,7 @@ Resources:
         - Name: https_proxy
         - Name: no_proxy
         Essential: true
-        Image: ansible/awx:16.0.0
+        Image: devopsjuly22017/awxv1:16.0.0
         LinuxParameters: {}
         LogConfiguration:
           LogDriver: awslogs
@@ -678,7 +716,7 @@ Resources:
               Ref: LogGroup
             awslogs-region:
               Ref: AWS::Region
-            awslogs-stream-prefix: awxcompose
+            awslogs-stream-prefix: awx-cft
         MountPoints:
         - ContainerPath: /var/run/redis/
           ReadOnly: true
@@ -688,7 +726,7 @@ Resources:
       Cpu: "256"
       ExecutionRoleArn:
         Ref: TaskTaskExecutionRole
-      Family: awxcompose-task
+      Family: awx-cft-task
       Memory: "512"
       NetworkMode: awsvpc
       RequiresCompatibilities:
@@ -701,7 +739,8 @@ Resources:
             AccessPointId:
               Ref: RedissocketAccessPoint
             IAM: ENABLED
-          FilesystemId: fs-e4d5a59c
+          FilesystemId:
+            Ref: RedissocketFilesystem
           TransitEncryption: ENABLED
         Name: redis_socket
     Type: AWS::ECS::TaskDefinition
@@ -721,7 +760,7 @@ Resources:
       - arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly
       Tags:
       - Key: com.docker.compose.project
-        Value: awxcompose
+        Value: awx-cft
       - Key: com.docker.compose.service
         Value: task
     Type: AWS::IAM::Role
@@ -750,12 +789,14 @@ Resources:
             Effect: Allow
             Principal: {}
             Resource:
-            - arn:aws:elasticfilesystem:us-east-2:724034124035:file-system/fs-e4d5a59c
+            - Fn::GetAtt:
+              - RedissocketFilesystem
+              - Arn
           Version: 2012-10-17
         PolicyName: TaskRedissocketVolumeMountPolicy
       Tags:
       - Key: com.docker.compose.project
-        Value: awxcompose
+        Value: awx-cft
       - Key: com.docker.compose.service
         Value: task
     Type: AWS::IAM::Role
@@ -801,7 +842,7 @@ Resources:
           - Arn
       Tags:
       - Key: com.docker.compose.project
-        Value: awxcompose
+        Value: awx-cft
       - Key: com.docker.compose.service
         Value: web
       TaskDefinition:
@@ -840,7 +881,7 @@ Resources:
       Protocol: TCP
       Tags:
       - Key: com.docker.compose.project
-        Value: awxcompose
+        Value: awx-cft
       TargetType: ip
       VpcId: vpc-d202e3b9
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
@@ -849,7 +890,7 @@ Resources:
       ContainerDefinitions:
       - Command:
         - us-east-2.compute.internal
-        - awxcompose.local
+        - awx-cft.local
         Essential: false
         Image: docker/ecs-searchdomain-sidecar:1.0
         LogConfiguration:
@@ -859,7 +900,7 @@ Resources:
               Ref: LogGroup
             awslogs-region:
               Ref: AWS::Region
-            awslogs-stream-prefix: awxcompose
+            awslogs-stream-prefix: awx-cft
         Name: Web_ResolvConf_InitContainer
       - DependsOn:
         - Condition: SUCCESS
@@ -869,7 +910,7 @@ Resources:
         - Name: https_proxy
         - Name: no_proxy
         Essential: true
-        Image: ansible/awx:16.0.0
+        Image: devopsjuly22017/awxv1:16.0.0
         LinuxParameters: {}
         LogConfiguration:
           LogDriver: awslogs
@@ -878,7 +919,7 @@ Resources:
               Ref: LogGroup
             awslogs-region:
               Ref: AWS::Region
-            awslogs-stream-prefix: awxcompose
+            awslogs-stream-prefix: awx-cft
         MountPoints:
         - ContainerPath: /var/run/redis/
           ReadOnly: true
@@ -892,7 +933,7 @@ Resources:
       Cpu: "256"
       ExecutionRoleArn:
         Ref: WebTaskExecutionRole
-      Family: awxcompose-web
+      Family: awx-cft-web
       Memory: "512"
       NetworkMode: awsvpc
       RequiresCompatibilities:
@@ -905,7 +946,8 @@ Resources:
             AccessPointId:
               Ref: RedissocketAccessPoint
             IAM: ENABLED
-          FilesystemId: fs-e4d5a59c
+          FilesystemId:
+            Ref: RedissocketFilesystem
           TransitEncryption: ENABLED
         Name: redis_socket
     Type: AWS::ECS::TaskDefinition
@@ -925,7 +967,7 @@ Resources:
       - arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly
       Tags:
       - Key: com.docker.compose.project
-        Value: awxcompose
+        Value: awx-cft
       - Key: com.docker.compose.service
         Value: web
     Type: AWS::IAM::Role
@@ -954,12 +996,14 @@ Resources:
             Effect: Allow
             Principal: {}
             Resource:
-            - arn:aws:elasticfilesystem:us-east-2:724034124035:file-system/fs-e4d5a59c
+            - Fn::GetAtt:
+              - RedissocketFilesystem
+              - Arn
           Version: 2012-10-17
         PolicyName: WebRedissocketVolumeMountPolicy
       Tags:
       - Key: com.docker.compose.project
-        Value: awxcompose
+        Value: awx-cft
       - Key: com.docker.compose.service
         Value: web
     Type: AWS::IAM::Role

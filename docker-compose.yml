@@ -4,7 +4,7 @@ services:
     image: devopsjuly22017/sidecar:16.0.0
     tty: true
   web:
-    image: ansible/awx:16.0.0
+    image: devopsjuly22017/awxv1:16.0.0
     container_name: awx_web
     ports:
       - "8052:8052"
@@ -13,15 +13,13 @@ services:
     restart: unless-stopped
     volumes:
       - "redis_socket:/var/run/redis/:ro"
-    volumes_from:
-      - sidecar
     environment:
       http_proxy:
       https_proxy:
       no_proxy:
 
   task:
-    image: ansible/awx:16.0.0
+    image: devopsjuly22017/awxv1:16.0.0
     container_name: awx_task
     command: /usr/bin/launch_awx_task.sh
     hostname: awx
@@ -29,8 +27,6 @@ services:
     restart: unless-stopped
     volumes:
       - "redis_socket:/var/run/redis/:ro"
-    volumes_from:
-      - sidecar
     environment:
       http_proxy:
       https_proxy:
@@ -48,8 +44,6 @@ services:
     command: ["/usr/local/etc/redis/redis.conf"]
     volumes:
       - "redis_socket:/var/run/redis/"
-    volumes_from:
-      - sidecar
 
   postgres:
     image: postgres:10
