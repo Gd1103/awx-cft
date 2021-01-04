@@ -8,8 +8,8 @@ services:
     hostname: awxweb
     user: root
     restart: unless-stopped
-    volumes_from:
-      - "redis"
+    volumes:
+      - "redis_socket:/var/run/redis/:ro"
     environment:
       http_proxy:
       https_proxy:
@@ -22,8 +22,8 @@ services:
     hostname: awx
     user: root
     restart: unless-stopped
-    volumes_from:
-      - "redis"
+    volumes:
+      - "redis_socket:/var/run/redis/:ro"
     environment:
       http_proxy:
       https_proxy:
@@ -31,14 +31,15 @@ services:
       SUPERVISOR_WEB_CONFIG_PATH: '/etc/supervisord.conf'
 
   redis:
-    image: devopsjuly22017/redis:16.0.5
+    image: devopsjuly22017/redis:16.0.0
     container_name: awx_redis
     restart: unless-stopped
-    command: ["/usr/local/etc/redis/redis.conf"]
     environment:
       http_proxy:
       https_proxy:
       no_proxy:
+    volumes:
+      - "redis_socket:/var/run/redis/:rw"
 
   postgres:
     image: postgres:10
@@ -55,3 +56,4 @@ services:
       no_proxy:
 volumes:
   postgres_data:
+  redis_socket:

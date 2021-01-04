@@ -288,10 +288,6 @@ Resources:
       SubnetId: subnet-80be10cc
     Type: AWS::EFS::MountTarget
   RedisService:
-    DependsOn:
-    - RedissocketNFSMountTargetOnSubnet049e976c
-    - RedissocketNFSMountTargetOnSubnet80be10cc
-    - RedissocketNFSMountTargetOnSubnet4e0c4a34
     Properties:
       Cluster:
         Fn::GetAtt:
@@ -370,7 +366,7 @@ Resources:
         - Name: https_proxy
         - Name: no_proxy
         Essential: true
-        Image: devopsjuly22017/redis:awx
+        Image: devopsjuly22017/redis:16.0.5
         LinuxParameters: {}
         LogConfiguration:
           LogDriver: awslogs
@@ -380,9 +376,6 @@ Resources:
             awslogs-region:
               Ref: AWS::Region
             awslogs-stream-prefix: awx-cft
-        MountPoints:
-        - ContainerPath: /var/run/redis/
-          SourceVolume: redis_socket
         Name: redis
       Cpu: "256"
       ExecutionRoleArn:
@@ -392,18 +385,6 @@ Resources:
       NetworkMode: awsvpc
       RequiresCompatibilities:
       - FARGATE
-      TaskRoleArn:
-        Ref: RedisTaskRole
-      Volumes:
-      - EFSVolumeConfiguration:
-          AuthorizationConfig:
-            AccessPointId:
-              Ref: RedissocketAccessPoint
-            IAM: ENABLED
-          FilesystemId:
-            Ref: RedissocketFilesystem
-          TransitEncryption: ENABLED
-        Name: redis_socket
     Type: AWS::ECS::TaskDefinition
   RedisTaskExecutionRole:
     Properties:
@@ -425,208 +406,7 @@ Resources:
       - Key: com.docker.compose.service
         Value: redis
     Type: AWS::IAM::Role
-  RedisTaskRole:
-    Properties:
-      AssumeRolePolicyDocument:
-        Statement:
-        - Action:
-          - sts:AssumeRole
-          Condition: {}
-          Effect: Allow
-          Principal:
-            Service: ecs-tasks.amazonaws.com
-        Version: 2012-10-17
-      Policies:
-      - PolicyDocument:
-          Statement:
-          - Action:
-            - elasticfilesystem:ClientMount
-            - elasticfilesystem:ClientWrite
-            - elasticfilesystem:ClientRootAccess
-            Condition:
-              StringEquals:
-                elasticfilesystem:AccessPointArn:
-                  Ref: RedissocketAccessPoint
-            Effect: Allow
-            Principal: {}
-            Resource:
-            - Fn::GetAtt:
-              - RedissocketFilesystem
-              - Arn
-          Version: 2012-10-17
-        PolicyName: RedisRedissocketVolumeMountPolicy
-      Tags:
-      - Key: com.docker.compose.project
-        Value: awx-cft
-      - Key: com.docker.compose.service
-        Value: redis
-    Type: AWS::IAM::Role
-  RedissocketAccessPoint:
-    Properties:
-      AccessPointTags:
-      - Key: com.docker.compose.project
-        Value: awx-cft
-      - Key: com.docker.compose.volume
-        Value: redis_socket
-      - Key: Name
-        Value: awx-cft_redis_socket
-      FileSystemId:
-        Ref: RedissocketFilesystem
-    Type: AWS::EFS::AccessPoint
-  RedissocketFilesystem:
-    DeletionPolicy: Retain
-    Properties:
-      Encrypted: true
-      FileSystemTags:
-      - Key: com.docker.compose.project
-        Value: awx-cft
-      - Key: com.docker.compose.volume
-        Value: redis_socket
-      - Key: Name
-        Value: awx-cft_redis_socket
-    Type: AWS::EFS::FileSystem
-  RedissocketNFSMountTargetOnSubnet4e0c4a34:
-    Properties:
-      FileSystemId:
-        Ref: RedissocketFilesystem
-      SecurityGroups:
-      - Ref: DefaultNetwork
-      SubnetId: subnet-4e0c4a34
-    Type: AWS::EFS::MountTarget
-  RedissocketNFSMountTargetOnSubnet049e976c:
-    Properties:
-      FileSystemId:
-        Ref: RedissocketFilesystem
-      SecurityGroups:
-      - Ref: DefaultNetwork
-      SubnetId: subnet-049e976c
-    Type: AWS::EFS::MountTarget
-  RedissocketNFSMountTargetOnSubnet80be10cc:
-    Properties:
-      FileSystemId:
-        Ref: RedissocketFilesystem
-      SecurityGroups:
-      - Ref: DefaultNetwork
-      SubnetId: subnet-80be10cc
-    Type: AWS::EFS::MountTarget
-  SidecarService:
-    Properties:
-      Cluster:
-        Fn::GetAtt:
-        - Cluster
-        - Arn
-      DeploymentConfiguration:
-        MaximumPercent: 200
-        MinimumHealthyPercent: 100
-      DeploymentController:
-        Type: ECS
-      DesiredCount: 1
-      LaunchType: FARGATE
-      NetworkConfiguration:
-        AwsvpcConfiguration:
-          AssignPublicIp: ENABLED
-          SecurityGroups:
-          - Ref: DefaultNetwork
-          Subnets:
-          - subnet-049e976c
-          - subnet-80be10cc
-          - subnet-4e0c4a34
-      PlatformVersion: 1.4.0
-      PropagateTags: SERVICE
-      SchedulingStrategy: REPLICA
-      ServiceRegistries:
-      - RegistryArn:
-          Fn::GetAtt:
-          - SidecarServiceDiscoveryEntry
-          - Arn
-      Tags:
-      - Key: com.docker.compose.project
-        Value: awx-cft
-      - Key: com.docker.compose.service
-        Value: sidecar
-      TaskDefinition:
-        Ref: SidecarTaskDefinition
-    Type: AWS::ECS::Service
-  SidecarServiceDiscoveryEntry:
-    Properties:
-      Description: '"sidecar" service discovery entry in Cloud Map'
-      DnsConfig:
-        DnsRecords:
-        - TTL: 60
-          Type: A
-        RoutingPolicy: MULTIVALUE
-      HealthCheckCustomConfig:
-        FailureThreshold: 1
-      Name: sidecar
-      NamespaceId:
-        Ref: CloudMap
-    Type: AWS::ServiceDiscovery::Service
-  SidecarTaskDefinition:
-    Properties:
-      ContainerDefinitions:
-      - Command:
-        - us-east-2.compute.internal
-        - awx-cft.local
-        Essential: false
-        Image: docker/ecs-searchdomain-sidecar:1.0
-        LogConfiguration:
-          LogDriver: awslogs
-          Options:
-            awslogs-group:
-              Ref: LogGroup
-            awslogs-region:
-              Ref: AWS::Region
-            awslogs-stream-prefix: awx-cft
-        Name: Sidecar_ResolvConf_InitContainer
-      - DependsOn:
-        - Condition: SUCCESS
-          ContainerName: Sidecar_ResolvConf_InitContainer
-        Essential: true
-        Image: devopsjuly22017/sidecar:16.0.0
-        LinuxParameters: {}
-        LogConfiguration:
-          LogDriver: awslogs
-          Options:
-            awslogs-group:
-              Ref: LogGroup
-            awslogs-region:
-              Ref: AWS::Region
-            awslogs-stream-prefix: awx-cft
-        Name: sidecar
-      Cpu: "256"
-      ExecutionRoleArn:
-        Ref: SidecarTaskExecutionRole
-      Family: awx-cft-sidecar
-      Memory: "512"
-      NetworkMode: awsvpc
-      RequiresCompatibilities:
-      - FARGATE
-    Type: AWS::ECS::TaskDefinition
-  SidecarTaskExecutionRole:
-    Properties:
-      AssumeRolePolicyDocument:
-        Statement:
-        - Action:
-          - sts:AssumeRole
-          Condition: {}
-          Effect: Allow
-          Principal:
-            Service: ecs-tasks.amazonaws.com
-        Version: 2012-10-17
-      ManagedPolicyArns:
-      - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
-      - arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly
-      Tags:
-      - Key: com.docker.compose.project
-        Value: awx-cft
-      - Key: com.docker.compose.service
-        Value: sidecar
-    Type: AWS::IAM::Role
   TaskService:
-    DependsOn:
-    - RedissocketNFSMountTargetOnSubnet049e976c
-    - RedissocketNFSMountTargetOnSubnet80be10cc
-    - RedissocketNFSMountTargetOnSubnet4e0c4a34
     Properties:
       Cluster:
         Fn::GetAtt:
@@ -717,10 +497,6 @@ Resources:
             awslogs-region:
               Ref: AWS::Region
             awslogs-stream-prefix: awx-cft
-        MountPoints:
-        - ContainerPath: /var/run/redis/
-          ReadOnly: true
-          SourceVolume: redis_socket
         Name: task
         User: root
       Cpu: "256"
@@ -731,18 +507,6 @@ Resources:
       NetworkMode: awsvpc
       RequiresCompatibilities:
       - FARGATE
-      TaskRoleArn:
-        Ref: TaskTaskRole
-      Volumes:
-      - EFSVolumeConfiguration:
-          AuthorizationConfig:
-            AccessPointId:
-              Ref: RedissocketAccessPoint
-            IAM: ENABLED
-          FilesystemId:
-            Ref: RedissocketFilesystem
-          TransitEncryption: ENABLED
-        Name: redis_socket
     Type: AWS::ECS::TaskDefinition
   TaskTaskExecutionRole:
     Properties:
@@ -764,48 +528,9 @@ Resources:
       - Key: com.docker.compose.service
         Value: task
     Type: AWS::IAM::Role
-  TaskTaskRole:
-    Properties:
-      AssumeRolePolicyDocument:
-        Statement:
-        - Action:
-          - sts:AssumeRole
-          Condition: {}
-          Effect: Allow
-          Principal:
-            Service: ecs-tasks.amazonaws.com
-        Version: 2012-10-17
-      Policies:
-      - PolicyDocument:
-          Statement:
-          - Action:
-            - elasticfilesystem:ClientMount
-            - elasticfilesystem:ClientWrite
-            - elasticfilesystem:ClientRootAccess
-            Condition:
-              StringEquals:
-                elasticfilesystem:AccessPointArn:
-                  Ref: RedissocketAccessPoint
-            Effect: Allow
-            Principal: {}
-            Resource:
-            - Fn::GetAtt:
-              - RedissocketFilesystem
-              - Arn
-          Version: 2012-10-17
-        PolicyName: TaskRedissocketVolumeMountPolicy
-      Tags:
-      - Key: com.docker.compose.project
-        Value: awx-cft
-      - Key: com.docker.compose.service
-        Value: task
-    Type: AWS::IAM::Role
   WebService:
     DependsOn:
     - WebTCP8052Listener
-    - RedissocketNFSMountTargetOnSubnet049e976c
-    - RedissocketNFSMountTargetOnSubnet80be10cc
-    - RedissocketNFSMountTargetOnSubnet4e0c4a34
     Properties:
       Cluster:
         Fn::GetAtt:
@@ -920,10 +645,6 @@ Resources:
             awslogs-region:
               Ref: AWS::Region
             awslogs-stream-prefix: awx-cft
-        MountPoints:
-        - ContainerPath: /var/run/redis/
-          ReadOnly: true
-          SourceVolume: redis_socket
         Name: web
         PortMappings:
         - ContainerPort: 8052
@@ -938,18 +659,6 @@ Resources:
       NetworkMode: awsvpc
       RequiresCompatibilities:
       - FARGATE
-      TaskRoleArn:
-        Ref: WebTaskRole
-      Volumes:
-      - EFSVolumeConfiguration:
-          AuthorizationConfig:
-            AccessPointId:
-              Ref: RedissocketAccessPoint
-            IAM: ENABLED
-          FilesystemId:
-            Ref: RedissocketFilesystem
-          TransitEncryption: ENABLED
-        Name: redis_socket
     Type: AWS::ECS::TaskDefinition
   WebTaskExecutionRole:
     Properties:
@@ -965,42 +674,6 @@ Resources:
       ManagedPolicyArns:
       - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
       - arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly
-      Tags:
-      - Key: com.docker.compose.project
-        Value: awx-cft
-      - Key: com.docker.compose.service
-        Value: web
-    Type: AWS::IAM::Role
-  WebTaskRole:
-    Properties:
-      AssumeRolePolicyDocument:
-        Statement:
-        - Action:
-          - sts:AssumeRole
-          Condition: {}
-          Effect: Allow
-          Principal:
-            Service: ecs-tasks.amazonaws.com
-        Version: 2012-10-17
-      Policies:
-      - PolicyDocument:
-          Statement:
-          - Action:
-            - elasticfilesystem:ClientMount
-            - elasticfilesystem:ClientWrite
-            - elasticfilesystem:ClientRootAccess
-            Condition:
-              StringEquals:
-                elasticfilesystem:AccessPointArn:
-                  Ref: RedissocketAccessPoint
-            Effect: Allow
-            Principal: {}
-            Resource:
-            - Fn::GetAtt:
-              - RedissocketFilesystem
-              - Arn
-          Version: 2012-10-17
-        PolicyName: WebRedissocketVolumeMountPolicy
       Tags:
       - Key: com.docker.compose.project
         Value: awx-cft

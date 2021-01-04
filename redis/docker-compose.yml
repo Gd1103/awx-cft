@@ -1,0 +1,11 @@
+version: '2'
+services:
+  redis:
+    image: devopsjuly22017/redis:16.0.5
+    container_name: awx_redis
+    restart: unless-stopped
+    command: ["/usr/local/etc/redis/redis.conf"]
+    environment:
+      http_proxy:
+      https_proxy:
+      no_proxy:
